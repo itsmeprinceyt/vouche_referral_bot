@@ -160,7 +160,7 @@ client.on('interactionCreate', async (interaction) => {
                 }
 
                 const vouchList = rows
-                    .map((row, index) => `${index + 1}. <@${row.user_id}> referred has ${row.vouch_count} times!`)
+                    .map((row, index) => `${index + 1}. <@${row.user_id}> has referred ${row.vouch_count} times!`)
                     .join('\n');
 
                 interaction.reply(`🏆 **Referral Count List** 🏆\n${vouchList}`);
