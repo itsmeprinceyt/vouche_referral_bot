@@ -9,23 +9,26 @@ if (!process.env.TOKEN || !process.env.CLIENT_ID) {
     process.exit(1);
 }
 
-// Initialize SQLite database
-const db = new sqlite3.Database('./vouches.db');
+// Helper function to get or create a database for a guild
+function getDatabase(guildId) {
+    const db = new sqlite3.Database(`./guild_${guildId}.db`);
+    db.serialize(() => {
+        db.run(`CREATE TABLE IF NOT EXISTS users (
+            user_id TEXT PRIMARY KEY,
+            vouch_count INTEGER DEFAULT 0,
+            referral_count INTEGER DEFAULT 0
+        )`);
 
-db.serialize(() => {
-    db.run(`CREATE TABLE IF NOT EXISTS users (
-        user_id TEXT PRIMARY KEY,
-        vouch_count INTEGER DEFAULT 0
-    )`);
-
-    db.run(`CREATE TABLE IF NOT EXISTS vouches (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        vouched_for TEXT,
-        vouched_by TEXT,
-        referral TEXT,
-        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-    )`);
-});
+        db.run(`CREATE TABLE IF NOT EXISTS vouches (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            vouched_for TEXT,
+            vouched_by TEXT,
+            referral TEXT,
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+        )`);
+    });
+    return db;
+}
 
 // Initialize the Discord bot
 const client = new Client({
@@ -75,6 +78,18 @@ const commands = [
                 required: true
             }
         ]
+    },
+    {
+        name: 'decrease-vouche',
+        description: 'Decrease a vouch for a specific user',
+        options: [
+            {
+                name: 'user',
+                type: 6, // USER type
+                description: 'The user whose vouch count to decrease',
+                required: true
+            }
+        ]
     }
 ];
 
@@ -96,7 +111,13 @@ const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
 client.on('interactionCreate', async (interaction) => {
     if (!interaction.isCommand()) return;
 
-    const { commandName, options } = interaction;
+    const { guildId, commandName, options } = interaction;
+
+    if (!guildId) {
+        return interaction.reply({ content: 'This bot can only be used in servers.', ephemeral: true });
+    }
+
+    const db = getDatabase(guildId);
 
     if (commandName === 'vouche') {
         const vouchedFor = options.getUser('user');
@@ -113,10 +134,12 @@ client.on('interactionCreate', async (interaction) => {
                     return interaction.reply({ content: 'An error occurred while saving the vouch.', ephemeral: true });
                 }
 
-                // Increment vouch count
+                // Increment vouch and referral counts
                 db.run(
-                    `INSERT INTO users (user_id, vouch_count) VALUES (?, 1)
-                     ON CONFLICT(user_id) DO UPDATE SET vouch_count = vouch_count + 1`,
+                    `INSERT INTO users (user_id, vouch_count, referral_count) VALUES (?, 1, 1)
+                     ON CONFLICT(user_id) DO UPDATE SET 
+                        vouch_count = vouch_count + 1,
+                        referral_count = referral_count + 1`,
                     [vouchedFor.id]
                 );
 
@@ -156,10 +179,31 @@ client.on('interactionCreate', async (interaction) => {
                 return interaction.reply({ content: 'An error occurred while resetting vouches.', ephemeral: true });
             }
 
-            db.run(`UPDATE users SET vouch_count = 0 WHERE user_id = ?`, [user.id], () => {
+            db.run(`UPDATE users SET vouch_count = 0, referral_count = 0 WHERE user_id = ?`, [user.id], () => {
                 interaction.reply(`Vouches for ${user} have been reset.`);
             });
         });
+    }
+
+    if (commandName === 'decrease-vouche') {
+        const user = options.getUser('user');
+
+        db.run(
+            `UPDATE users SET vouch_count = vouch_count - 1 WHERE user_id = ? AND vouch_count > 0`,
+            [user.id],
+            function (err) {
+                if (err) {
+                    console.error(err);
+                    return interaction.reply({ content: 'An error occurred while decreasing the vouch count.', ephemeral: true });
+                }
+
+                if (this.changes === 0) {
+                    return interaction.reply(`${user} already has 0 vouches.`);
+                }
+
+                interaction.reply(`Decreased 1 vouch from ${user}.`);
+            }
+        );
     }
 });
 
