@@ -42,7 +42,7 @@ client.once('ready', () => {
 
 const commands = [
     {
-        name: 'vouche',
+        name: 'refferal',
         description: 'Add a vouch for a user',
         options: [
             {
@@ -60,11 +60,11 @@ const commands = [
         ]
     },
     {
-        name: 'vouch-list',
+        name: 'referral-list',
         description: 'View the list of users with their vouch counts'
     },
     {
-        name: 'reset-vouche',
+        name: 'reset-referral-of-user',
         description: 'Reset vouches for a specific user',
         options: [
             {
@@ -76,7 +76,7 @@ const commands = [
         ]
     },
     {
-        name: 'decrease-vouche',
+        name: 'decrease-referral-of-user',
         description: 'Decrease a vouch for a specific user',
         options: [
             {
@@ -114,12 +114,14 @@ client.on('interactionCreate', async (interaction) => {
 
     const guildId = interaction.guild?.id;
 
+    console.log(`Guild ID: ${guildId}`); // Debugging line to check if guildId is present
     if (!guildId) {
+        console.log(`Command "${commandName}" was run in DM by ${interaction.user.tag}`);
         return interaction.reply({ content: 'This bot can only be used in servers.', ephemeral: true });
     }
     const db = getDatabase(guildId);
 
-    if (commandName === 'vouche') {
+    if (commandName === 'refferal') {
         const vouchedFor = options.getUser('referral'); // who is referring
         const referral = options.getUser('referred'); // who got referred
         const vouchedBy = interaction.user.id; // who is using the command
@@ -142,11 +144,12 @@ client.on('interactionCreate', async (interaction) => {
                 );
 
                 interaction.reply(`${vouchedFor} Referred 👉 ${referral}`);
+                console.log(`Update: ${vouchedFor} Referred 👉 ${referral}`)
             }
         );
     }
 
-    if (commandName === 'vouch-list') {
+    if (commandName === 'referral-list') {
         db.all(
             `SELECT user_id, vouch_count FROM users WHERE vouch_count > 0 ORDER BY vouch_count DESC`,
             (err, rows) => {
@@ -168,7 +171,7 @@ client.on('interactionCreate', async (interaction) => {
         );
     }
 
-    if (commandName === 'reset-vouche') {
+    if (commandName === 'reset-referral-of-user') {
         const user = options.getUser('user');
 
         db.run(`DELETE FROM vouches WHERE vouched_for = ?`, [user.id], (err) => {
@@ -183,7 +186,7 @@ client.on('interactionCreate', async (interaction) => {
         });
     }
 
-    if (commandName === 'decrease-vouche') {
+    if (commandName === 'decrease-referral-of-user') {
         const user = options.getUser('user');
 
         db.run(
