@@ -65,12 +65,12 @@ const commands = [
     },
     {
         name: 'reset-referral-of-user',
-        description: 'Reset vouches for a specific user',
+        description: 'Reset referrals for a specific user',
         options: [
             {
                 name: 'user',
                 type: 6,
-                description: 'The user whose vouches to reset',
+                description: 'The user whose referrals to reset',
                 required: true
             }
         ]
@@ -159,7 +159,7 @@ client.on('interactionCreate', async (interaction) => {
                 }
 
                 if (rows.length === 0) {
-                    return interaction.reply('No users have received any vouches yet.');
+                    return interaction.reply('No users have referred anyone.');
                 }
 
                 const vouchList = rows
@@ -181,7 +181,7 @@ client.on('interactionCreate', async (interaction) => {
             }
 
             db.run(`UPDATE users SET vouch_count = 0, referral_count = 0 WHERE user_id = ?`, [user.id], () => {
-                interaction.reply(`Vouches for ${user} have been reset.`);
+                interaction.reply(`Referrals for ${user} have been reset.`);
             });
         });
     }
@@ -199,10 +199,10 @@ client.on('interactionCreate', async (interaction) => {
                 }
 
                 if (this.changes === 0) {
-                    return interaction.reply(`${user} already has 0 vouches.`);
+                    return interaction.reply(`${user} already has 0 referral.`);
                 }
 
-                interaction.reply(`Decreased 1 vouch from ${user}.`);
+                interaction.reply(`Decreased 1 referral from ${user}.`);
             }
         );
     }
