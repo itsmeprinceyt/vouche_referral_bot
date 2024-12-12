@@ -1,15 +1,12 @@
-// Import necessary libraries
 const { Client, GatewayIntentBits, REST, Routes } = require('discord.js');
 const sqlite3 = require('sqlite3').verbose();
 require('dotenv').config();
 
-// Check for required environment variables
 if (!process.env.TOKEN || !process.env.CLIENT_ID) {
     console.error('Missing TOKEN or CLIENT_ID in .env file.');
     process.exit(1);
 }
 
-// Helper function to get or create a database for a guild
 function getDatabase(guildId) {
     const db = new sqlite3.Database(`./guild_${guildId}.db`);
     db.serialize(() => {
@@ -30,7 +27,6 @@ function getDatabase(guildId) {
     return db;
 }
 
-// Initialize the Discord bot
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
@@ -40,25 +36,25 @@ const client = new Client({
 });
 
 client.once('ready', () => {
-    console.log(`Logged in as ${client.user.tag}!`);
+    console.log(`🤖 Bot is online as ${client.user.tag}!`);
+    console.log(`Bot is connected to ${client.guilds.cache.size} guild(s).`);
 });
 
-// Register slash commands
 const commands = [
     {
         name: 'vouche',
         description: 'Add a vouch for a user',
         options: [
             {
-                name: 'user',
-                type: 6, // USER type
-                description: 'The user you are vouching for',
+                name: 'referral',
+                type: 6,
+                description: 'The user who is referring.',
                 required: true
             },
             {
-                name: 'referral',
-                type: 6, // USER type
-                description: 'The referral user',
+                name: 'referred',
+                type: 6,
+                description: 'The referred user.',
                 required: true
             }
         ]
@@ -73,7 +69,7 @@ const commands = [
         options: [
             {
                 name: 'user',
-                type: 6, // USER type
+                type: 6,
                 description: 'The user whose vouches to reset',
                 required: true
             }
@@ -85,7 +81,7 @@ const commands = [
         options: [
             {
                 name: 'user',
-                type: 6, // USER type
+                type: 6,
                 description: 'The user whose vouch count to decrease',
                 required: true
             }
@@ -96,35 +92,38 @@ const commands = [
 const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
 (async () => {
     try {
-        console.log('Registering slash commands...');
+        console.log('🔄 Registering slash commands...');
         await rest.put(
             Routes.applicationCommands(process.env.CLIENT_ID),
             { body: commands }
         );
-        console.log('Slash commands registered!');
+        console.log('✅ Slash commands registered successfully!');
     } catch (error) {
-        console.error('Failed to register slash commands:', error);
+        console.error('❌ Failed to register slash commands:', error);
     }
 })();
 
-// Handle slash commands
 client.on('interactionCreate', async (interaction) => {
     if (!interaction.isCommand()) return;
 
-    const { guildId, commandName, options } = interaction;
+    console.log(`📥 Received command: ${interaction.commandName}`);
+    console.log(`🔍 User: ${interaction.user.tag} (${interaction.user.id})`);
+    console.log(`🌐 Guild: ${interaction.guild?.name || 'DM'}`);
+
+    const { commandName, options } = interaction;
+
+    const guildId = interaction.guild?.id;
 
     if (!guildId) {
         return interaction.reply({ content: 'This bot can only be used in servers.', ephemeral: true });
     }
-
     const db = getDatabase(guildId);
 
     if (commandName === 'vouche') {
-        const vouchedFor = options.getUser('user');
-        const referral = options.getUser('referral');
-        const vouchedBy = interaction.user.id;
+        const vouchedFor = options.getUser('referral'); // who is referring
+        const referral = options.getUser('referred'); // who got referred
+        const vouchedBy = interaction.user.id; // who is using the command
 
-        // Add vouch to database
         db.run(
             `INSERT INTO vouches (vouched_for, vouched_by, referral) VALUES (?, ?, ?)`,
             [vouchedFor.id, vouchedBy, referral.id],
@@ -134,7 +133,6 @@ client.on('interactionCreate', async (interaction) => {
                     return interaction.reply({ content: 'An error occurred while saving the vouch.', ephemeral: true });
                 }
 
-                // Increment vouch and referral counts
                 db.run(
                     `INSERT INTO users (user_id, vouch_count, referral_count) VALUES (?, 1, 1)
                      ON CONFLICT(user_id) DO UPDATE SET 
@@ -143,7 +141,7 @@ client.on('interactionCreate', async (interaction) => {
                     [vouchedFor.id]
                 );
 
-                interaction.reply(`${interaction.user} vouched for ${vouchedFor} (Referral: ${referral})!`);
+                interaction.reply(`${vouchedFor} Referred 👉 ${referral}`);
             }
         );
     }
@@ -162,10 +160,10 @@ client.on('interactionCreate', async (interaction) => {
                 }
 
                 const vouchList = rows
-                    .map((row, index) => `${index + 1}. <@${row.user_id}>: ${row.vouch_count} vouches`)
+                    .map((row, index) => `${index + 1}. <@${row.user_id}> referred has ${row.vouch_count} times!`)
                     .join('\n');
 
-                interaction.reply(`🏆 **Vouch List** 🏆\n${vouchList}`);
+                interaction.reply(`🏆 **Referral Count List** 🏆\n${vouchList}`);
             }
         );
     }
@@ -207,5 +205,4 @@ client.on('interactionCreate', async (interaction) => {
     }
 });
 
-// Log in the bot
 client.login(process.env.TOKEN);
