@@ -86,7 +86,19 @@ const commands = [
                 required: true
             }
         ]
-    }
+    },
+    {
+        name: 'referral-bonus',
+        description: 'Referral points Redeemed by a user',
+        options: [
+            {
+                name: 'user',
+                type: 6,
+                description: 'The user who is redeeming their referral points',
+                required: true
+            }
+        ]
+    }    
 ];
 
 const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
@@ -205,6 +217,15 @@ client.on('interactionCreate', async (interaction) => {
                 interaction.reply(`Decreased 1 referral from ${user}.`);
             }
         );
+    }
+
+    if (commandName === 'referral-bonus') {
+        const user = options.getUser('user');
+        await interaction.reply({
+            content: `${user} has redeemed their referral points 🎉`,
+            allowedMentions: { users: [] }
+        });
+        console.log(`Name:${user} Username:${user.tag} (${user.id}) has redeemed their referral points.`);
     }
 });
 
