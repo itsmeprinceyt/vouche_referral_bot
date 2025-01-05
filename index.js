@@ -89,16 +89,22 @@ const commands = [
     },
     {
         name: 'referral-bonus',
-        description: 'Referral points Redeemed by a user',
+        description: 'Referral points redeemed by a user',
         options: [
             {
                 name: 'user',
-                type: 6,
+                type: 6, 
                 description: 'The user who is redeeming their referral points',
                 required: true
+            },
+            {
+                name: 'target',
+                type: 6, 
+                description: 'The user on whom points are being used',
+                required: false
             }
         ]
-    }    
+    }
 ];
 
 const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
@@ -221,11 +227,18 @@ client.on('interactionCreate', async (interaction) => {
 
     if (commandName === 'referral-bonus') {
         const user = options.getUser('user');
+        const target = options.getUser('target');
+        let responseMessage = `${user} has redeemed their referral points 🎉`;
+        if (target) {
+            responseMessage = `${user} has redeemed their referral points. Points used on ${target} 🎉`;
+        }
         await interaction.reply({
-            content: `${user} has redeemed their referral points 🎉`,
-            allowedMentions: { users: [] }
+            content: responseMessage,
+            allowedMentions: { users: [user.id, target?.id] }
         });
-        console.log(`Name:${user} Username:${user.tag} (${user.id}) has redeemed their referral points.`);
+        console.log(
+            `Name: ${user.tag} (${user.id}) has redeemed their referral points${target ? ` on ${target.tag} (${target.id})` : ''}.`
+        );
     }
 });
 
