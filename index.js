@@ -1,9 +1,10 @@
-const { Client, GatewayIntentBits, REST, Routes } = require('discord.js');
+const { Client, GatewayIntentBits, REST, Routes, EmbedBuilder } = require('discord.js');
 const sqlite3 = require('sqlite3').verbose();
 require('dotenv').config();
+const { COLOR_GOLD, COLOR_TRUE, COLOR_FALSE } = require('./utils/utils');
 
-if (!process.env.TOKEN || !process.env.CLIENT_ID) {
-    console.error('Missing TOKEN or CLIENT_ID in .env file.');
+if (!process.env.TOKEN || !process.env.CLIENT_ID || !process.env.DISCORD_INVITE_LINK) {
+    console.error('Missing TOKEN, CLIENT_ID or DISCORD_INVITE_LINK in .env file.');
     process.exit(1);
 }
 
@@ -93,17 +94,21 @@ const commands = [
         options: [
             {
                 name: 'user',
-                type: 6, 
+                type: 6,
                 description: 'The user who is redeeming their referral points',
                 required: true
             },
             {
                 name: 'target',
-                type: 6, 
+                type: 6,
                 description: 'The user on whom points are being used',
                 required: false
             }
         ]
+    },
+    {
+        name: 'invite',
+        description: 'Get the Discord server invite link'
     }
 ];
 
@@ -129,20 +134,51 @@ client.on('interactionCreate', async (interaction) => {
     console.log(`🌐 Guild: ${interaction.guild?.name || 'DM'}`);
 
     const { commandName, options } = interaction;
-
     const guildId = interaction.guild?.id;
 
-    console.log(`Guild ID: ${guildId}`); // Debugging line to check if guildId is present
+    // For /invite (works in DMs or guild)
+    if (commandName === 'invite') {
+        try {
+            const embed = new EmbedBuilder()
+                .setAuthor({
+                    name: 'Referral Tracker Bot',
+                    iconURL: interaction.client.user.avatarURL()
+                })
+                .setThumbnail(interaction.client.user.avatarURL())
+                .setTitle('Discord Bot Invite Link')
+                .setDescription(process.env.DISCORD_INVITE_LINK)
+                .setColor(COLOR_GOLD)
+                .setTimestamp();
+
+            await interaction.reply({ embeds: [embed], ephemeral: false });
+        } catch (err) {
+            console.error(err);
+            await interaction.reply({ content: 'An error occurred while sending the invite link.', ephemeral: true });
+        }
+        return;
+    }
+
+    // For all other commands: require guild
     if (!guildId) {
         console.log(`Command "${commandName}" was run in DM by ${interaction.user.tag}`);
-        return interaction.reply({ content: 'This bot can only be used in servers.', ephemeral: true });
+        const embed = new EmbedBuilder()
+            .setAuthor({
+                name: 'Referral Tracker Bot',
+                iconURL: interaction.client.user.avatarURL()
+            })
+            .setTitle('❌ This bot can only be used in servers.')
+            .setDescription('Please use these commands inside a Discord server.')
+            .setColor(COLOR_FALSE)
+            .setTimestamp();
+        return interaction.reply({ embeds: [embed], ephemeral: true });
     }
     const db = getDatabase(guildId);
 
+    // /refferal
     if (commandName === 'refferal') {
         const vouchedFor = options.getUser('referral'); // who is referring
-        const referral = options.getUser('referred'); // who got referred
-        const vouchedBy = interaction.user.id; // who is using the command
+        const referral = options.getUser('referred');    // who got referred
+        const vouchedBy = interaction.user.id;           // who is using the command
 
         db.run(
             `INSERT INTO vouches (vouched_for, vouched_by, referral) VALUES (?, ?, ?)`,
@@ -150,60 +186,125 @@ client.on('interactionCreate', async (interaction) => {
             (err) => {
                 if (err) {
                     console.error(err);
-                    return interaction.reply({ content: 'An error occurred while saving the vouch.', ephemeral: true });
+                    const embed = new EmbedBuilder()
+                        .setAuthor({
+                            name: 'Referral Tracker Bot',
+                            iconURL: interaction.client.user.avatarURL()
+                        })
+                        .setTitle('❌ Database Error')
+                        .setDescription('An error occurred while saving the vouch.')
+                        .setColor(COLOR_FALSE);
+                    return interaction.reply({ embeds: [embed], ephemeral: true });
                 }
 
                 db.run(
                     `INSERT INTO users (user_id, vouch_count, referral_count) VALUES (?, 1, 1)
-                     ON CONFLICT(user_id) DO UPDATE SET 
+                    ON CONFLICT(user_id) DO UPDATE SET 
                         vouch_count = vouch_count + 1,
                         referral_count = referral_count + 1`,
                     [vouchedFor.id]
                 );
 
-                interaction.reply(`${vouchedFor} Referred 👉 ${referral}`);
-                console.log(`Update: ${vouchedFor} Referred 👉 ${referral}`)
+                const embed = new EmbedBuilder()
+                    .setAuthor({
+                        name: 'Referral Tracker Bot',
+                        iconURL: interaction.client.user.avatarURL()
+                    })
+                    .setTitle('✅ Referral Added!')
+                    .setDescription(`${vouchedFor} referred 👉 ${referral}`)
+                    .setTimestamp()
+                    .setColor(COLOR_TRUE);
+                interaction.reply({ embeds: [embed] });
+                console.log(`Update: ${vouchedFor} referred 👉 ${referral}`);
             }
         );
+        return;
     }
 
+    // /referral-list
     if (commandName === 'referral-list') {
         db.all(
             `SELECT user_id, vouch_count FROM users WHERE vouch_count > 0 ORDER BY vouch_count DESC`,
             (err, rows) => {
                 if (err) {
                     console.error(err);
-                    return interaction.reply({ content: 'An error occurred while retrieving the vouch list.', ephemeral: true });
+                    const embed = new EmbedBuilder()
+                        .setAuthor({
+                            name: 'Referral Tracker Bot',
+                            iconURL: interaction.client.user.avatarURL()
+                        })
+                        .setTitle('❌ Database Error')
+                        .setDescription('An error occurred while retrieving the vouch list.')
+                        .setColor(COLOR_FALSE)
+                        .setTimestamp();
+                    return interaction.reply({ embeds: [embed], ephemeral: true });
                 }
 
                 if (rows.length === 0) {
-                    return interaction.reply('No users have referred anyone.');
+                    const embed = new EmbedBuilder()
+                        .setAuthor({
+                            name: 'Referral Tracker Bot',
+                            iconURL: interaction.client.user.avatarURL()
+                        })
+                        .setDescription('No users have referred anyone yet.')
+                        .setTimestamp();
+                    return interaction.reply({ embeds: [embed] });
                 }
 
                 const vouchList = rows
-                    .map((row, index) => `${index + 1}. <@${row.user_id}> has referred ${row.vouch_count} times!`)
+                    .map((row, idx) => `**${idx + 1}. <@${row.user_id}>:** ${row.vouch_count} referrals`)
                     .join('\n');
 
-                interaction.reply(`🏆 **Referral Count List** 🏆\n${vouchList}`);
+                const embed = new EmbedBuilder()
+                    .setAuthor({
+                        name: 'Referral Tracker Bot',
+                        iconURL: interaction.client.user.avatarURL()
+                    })
+                    .setThumbnail(interaction.client.user.avatarURL())
+                    .setTitle('🏆List')
+                    .setDescription(vouchList)
+                    .setColor(COLOR_GOLD)
+                    .setTimestamp();
+                interaction.reply({ embeds: [embed] });
             }
         );
+        return;
     }
 
+    // /reset-referral-of-user
     if (commandName === 'reset-referral-of-user') {
         const user = options.getUser('user');
 
         db.run(`DELETE FROM vouches WHERE vouched_for = ?`, [user.id], (err) => {
             if (err) {
                 console.error(err);
-                return interaction.reply({ content: 'An error occurred while resetting vouches.', ephemeral: true });
+                const embed = new EmbedBuilder()
+                    .setAuthor({
+                        name: 'Referral Tracker Bot',
+                        iconURL: interaction.client.user.avatarURL()
+                    })
+                    .setTitle('❌ Database Error')
+                    .setDescription('An error occurred while resetting referrals.')
+                    .setColor(COLOR_FALSE);
+                return interaction.reply({ embeds: [embed], ephemeral: true });
             }
 
             db.run(`UPDATE users SET vouch_count = 0, referral_count = 0 WHERE user_id = ?`, [user.id], () => {
-                interaction.reply(`Referrals for ${user} have been reset.`);
+                const embed = new EmbedBuilder()
+                    .setAuthor({
+                        name: 'Referral Tracker Bot',
+                        iconURL: interaction.client.user.avatarURL()
+                    })
+                    .setTitle('Referrals Reset')
+                    .setDescription(`Referrals for ${user} have been reset.`)
+                    .setTimestamp();
+                interaction.reply({ embeds: [embed] });
             });
         });
+        return;
     }
 
+    // /decrease-referral-of-user
     if (commandName === 'decrease-referral-of-user') {
         const user = options.getUser('user');
 
@@ -213,32 +314,69 @@ client.on('interactionCreate', async (interaction) => {
             function (err) {
                 if (err) {
                     console.error(err);
-                    return interaction.reply({ content: 'An error occurred while decreasing the vouch count.', ephemeral: true });
+                    const embed = new EmbedBuilder()
+                        .setAuthor({
+                            name: 'Referral Tracker Bot',
+                            iconURL: interaction.client.user.avatarURL()
+                        })
+                        .setTitle('❌ Database Error')
+                        .setDescription('An error occurred while decreasing the vouch count.')
+                        .setColor(COLOR_FALSE);
+                    return interaction.reply({ embeds: [embed], ephemeral: true });
                 }
 
                 if (this.changes === 0) {
-                    return interaction.reply(`${user} already has 0 referral.`);
+                    const embed = new EmbedBuilder()
+                        .setAuthor({
+                            name: 'Referral Tracker Bot',
+                            iconURL: interaction.client.user.avatarURL()
+                        })
+                        .setTitle('⚠️ No Referrals')
+                        .setDescription(`${user} already has 0 referrals.`)
+                        .setColor(COLOR_FALSE);
+                    return interaction.reply({ embeds: [embed] });
                 }
 
-                interaction.reply(`Decreased 1 referral from ${user}.`);
+                const embed = new EmbedBuilder()
+                    .setAuthor({
+                        name: 'Referral Tracker Bot',
+                        iconURL: interaction.client.user.avatarURL()
+                    })
+                    .setTitle('Referral Decreased')
+                    .setDescription(`Decreased 1 referral from ${user}.`)
+                    .setColor(COLOR_TRUE)
+                    .setTimestamp();
+                interaction.reply({ embeds: [embed] });
             }
         );
+        return;
     }
 
+    // /referral-bonus
     if (commandName === 'referral-bonus') {
         const user = options.getUser('user');
         const target = options.getUser('target');
-        let responseMessage = `${user} has redeemed their referral points 🎉`;
+        let description = `${user} has redeemed their referral points 🎉`;
         if (target) {
-            responseMessage = `${user} has redeemed their referral points. Points used on ${target} 🎉`;
+            description = `${user} has redeemed their referral points. Points used on ${target} 🎉`;
         }
+        const embed = new EmbedBuilder()
+            .setAuthor({
+                name: 'Referral Tracker Bot',
+                iconURL: interaction.client.user.avatarURL()
+            })
+            .setTitle('🎁 Referral Bonus Redeemed')
+            .setDescription(description)
+            .setColor(COLOR_TRUE)
+            .setTimestamp();
         await interaction.reply({
-            content: responseMessage,
+            embeds: [embed],
             allowedMentions: { users: [user.id, target?.id] }
         });
         console.log(
             `Name: ${user.tag} (${user.id}) has redeemed their referral points${target ? ` on ${target.tag} (${target.id})` : ''}.`
         );
+        return;
     }
 });
 
